@@ -83,7 +83,6 @@ export function ChatKitPanel({
     };
 
     const handleError = (event: Event) => {
-      console.error("Failed to load chatkit.js for some reason", event);
       if (!isMountedRef.current) return;
       setScriptStatus("error");
       const detail = (event as CustomEvent<unknown>)?.detail ?? "unknown error";
@@ -139,14 +138,6 @@ export function ChatKitPanel({
 
   const getClientSecret = useCallback(
     async (currentSecret: string | null) => {
-      if (isDev) {
-        console.info("[ChatKitPanel] getClientSecret invoked", {
-          currentSecretPresent: Boolean(currentSecret),
-          workflowId: WORKFLOW_ID,
-          endpoint: CREATE_SESSION_ENDPOINT,
-        });
-      }
-
       if (!isWorkflowConfigured) {
         const detail = "Set NEXT_PUBLIC_CHATKIT_WORKFLOW_ID in your .env.local file.";
         if (isMountedRef.current) {
@@ -172,26 +163,15 @@ export function ChatKitPanel({
         });
 
         const raw = await response.text();
-        if (isDev) {
-          console.info("[ChatKitPanel] createSession response", {
-            status: response.status,
-            ok: response.ok,
-            bodyPreview: raw.slice(0, 1600),
-          });
-        }
-
         let data: Record<string, unknown> = {};
         if (raw) {
           try {
             data = JSON.parse(raw) as Record<string, unknown>;
-          } catch (parseError) {
-            console.error("Failed to parse create-session response", parseError);
-          }
+          } catch {}
         }
 
         if (!response.ok) {
           const detail = extractErrorDetail(data, response.statusText);
-          console.error("Create session request failed", { status: response.status, body: data });
           throw new Error(detail);
         }
 
@@ -202,7 +182,6 @@ export function ChatKitPanel({
 
         return clientSecret;
       } catch (error) {
-        console.error("Failed to create ChatKit session", error);
         const detail = error instanceof Error ? error.message : "Unable to start ChatKit session.";
         if (isMountedRef.current) setErrorState({ session: detail, retryable: false });
         throw error instanceof Error ? error : new Error(detail);
@@ -219,63 +198,87 @@ export function ChatKitPanel({
     startScreen: { greeting: GREETING, prompts: STARTER_PROMPTS },
     composer: { placeholder: PLACEHOLDER_INPUT, attachments: { enabled: true } },
     threadItemActions: { feedback: false },
-
     widgets: {
       onAction: async (action, widgetItem) => {
         const type = typeof action === "string" ? action : String(action?.type ?? "");
         const payload = (typeof action === "string" ? {} : (action?.payload ?? {})) as Record<string, any>;
-
-        // Values from Card `asForm` land in payload by input `name`
         const form = (widgetItem as any)?.form ?? payload?.form ?? {};
         const quizId = payload?.quizId ?? (widgetItem as any)?.quizId ?? null;
         const answer = payload?.answer ?? form?.answer ?? null;
 
-        console.log("[widgets.onAction]", { type, quizId, answer, form, payload, widgetItem });
-
         if (type === "question.submit") {
           const el = kitRef.current as any;
-
+          console.log("quiz.submit", { quizId, answer, payload });
           try {
-            // 1) persist on your server
             const res = await fetch("/api/quiz/submit", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ quizId, answer }),
             });
             if (!res.ok) throw new Error(`API ${res.status}`);
-
-            // 2) immediate UX feedback inside chat (anchored to the card)
             if (el?.sendUserMessage) {
               await el.sendUserMessage({
                 text: `Recorded your answer "${answer}" for quiz "${quizId}".`,
                 reply: (widgetItem as any)?.id,
               });
             }
-          } catch (err) {
-            console.error("quiz/submit failed", err);
+          } catch {
             if (el?.sendUserMessage) {
               await el.sendUserMessage({
-                text: `Sorry — couldn’t save your answer right now.`,
+                text: "Sorry — couldn’t save your answer right now.",
                 reply: (widgetItem as any)?.id,
               });
             }
           }
-
-          // If later you also want your agent to react, you can re-enable this:
-          // if (el?.sendCustomAction) {
-          //   await el.sendCustomAction(
-          //     { type: "question.submit", payload: { quizId, answer } },
-          //     (widgetItem as any)?.id
-          //   );
-          // }
-
           return { ok: true, quizId, answer };
+        }
+
+        if (type === "skin.survey.submit") {
+          const pick = (k: string) => (payload && k in payload ? payload[k] : null);
+          let allergies = Object.entries(payload)
+            .filter(([k, v]) => k.startsWith("q4_") && v)
+            .map(([k]) => k.replace(/^q4_/, ""));
+          if (allergies.includes("none")) allergies = ["none"];
+          const survey = {
+            q1: pick("q1"),
+            q2: pick("q2"),
+            q3: pick("q3"),
+            q4: allergies,
+            q5: pick("q5"),
+            q6: pick("q6"),
+            q7: pick("q7"),
+            q8: pick("q8"),
+          };
+          const el = kitRef.current as any;
+          console.log("skin.survey.submit.payload", payload);
+          console.log("skin.survey.submit.normalized", survey);
+          try {
+            const res = await fetch("/api/survey/submit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(survey),
+            });
+            if (!res.ok) throw new Error(`API ${res.status}`);
+            if (el?.sendUserMessage) {
+              await el.sendUserMessage({
+                text: "Thanks! Your skin profile survey has been recorded.",
+                reply: (widgetItem as any)?.id,
+              });
+            }
+          } catch {
+            if (el?.sendUserMessage) {
+              await el.sendUserMessage({
+                text: "Sorry — couldn’t save your survey right now.",
+                reply: (widgetItem as any)?.id,
+              });
+            }
+          }
+          return { ok: true };
         }
 
         return { ok: true };
       },
     },
-
     onClientTool: async (invocation: { name: string; params: Record<string, unknown> }) => {
       if (invocation.name === "switch_theme") {
         const requested = (invocation.params as any).theme;
@@ -285,7 +288,6 @@ export function ChatKitPanel({
         }
         return { success: false };
       }
-
       if (invocation.name === "record_fact") {
         const id = String((invocation.params as any).fact_id ?? "");
         const text = String((invocation.params as any).fact_text ?? "");
@@ -298,10 +300,8 @@ export function ChatKitPanel({
         });
         return { success: true };
       }
-
       return { success: false };
     },
-
     onResponseEnd: () => {
       onResponseEnd();
     },
@@ -372,17 +372,13 @@ function extractErrorDetail(
   fallback: string
 ): string {
   if (!payload) return fallback;
-
   const error = (payload as any).error;
   if (typeof error === "string") return error;
-
   if (error && typeof error === "object" && "message" in error && typeof (error as any).message === "string") {
     return (error as any).message;
   }
-
   const details = (payload as any).details;
   if (typeof details === "string") return details;
-
   if (details && typeof details === "object" && "error" in details) {
     const nestedError = (details as any).error;
     if (typeof nestedError === "string") return nestedError;
@@ -390,7 +386,6 @@ function extractErrorDetail(
       return (nestedError as any).message;
     }
   }
-
   if (typeof (payload as any).message === "string") return (payload as any).message;
   return fallback;
 }
