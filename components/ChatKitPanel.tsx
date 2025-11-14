@@ -252,6 +252,18 @@ export function ChatKitPanel({
           const el = kitRef.current as any;
           console.log("skin.survey.submit.payload", payload);
           console.log("skin.survey.submit.normalized", survey);
+          const pretty = (v: any) =>
+            typeof v === "string" ? v.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : String(v);
+          const list = (arr: any[]) => (!arr || arr.length === 0 ? "None" : arr.map(pretty).join(", "));
+          const summary =
+            "Survey saved:\n" +
+            `- Skin type: ${pretty(survey.q1)}\n` +
+            `- Primary concern: ${pretty(survey.q2)}\n` +
+            `- Allergies: ${list(survey.q4)}\n` +
+            `- Product preference: ${pretty(survey.q5)}\n` +
+            `- Routine: ${pretty(survey.q6)}\n` +
+            `- Sensitivity: ${pretty(survey.q7)}\n` +
+            `- Desired results: ${pretty(survey.q8)}`;
           try {
             const res = await fetch("/api/survey/submit", {
               method: "POST",
@@ -261,7 +273,7 @@ export function ChatKitPanel({
             if (!res.ok) throw new Error(`API ${res.status}`);
             if (el?.sendUserMessage) {
               await el.sendUserMessage({
-                text: "Thanks! Your skin profile survey has been recorded.",
+                text: summary,
                 reply: (widgetItem as any)?.id,
               });
             }
