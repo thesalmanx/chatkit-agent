@@ -166,7 +166,7 @@ export function ChatKitPanel({
         if (raw) {
           try {
             data = JSON.parse(raw) as Record<string, unknown>;
-          } catch {}
+          } catch { }
         }
 
         if (!response.ok) {
@@ -235,14 +235,9 @@ export function ChatKitPanel({
             typeof v === "string" ? v.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : String(v);
           const list = (arr: any[]) => (!arr || arr.length === 0 ? "None" : arr.map(pretty).join(", "));
           const query =
-            `Recommend products for a user with skin type ${pretty(survey.q1)}, ` +
-            `concern ${pretty(survey.q2)}, ` +
-            `allergies ${list(survey.q4)}, ` +
-            `preference ${pretty(survey.q5)}, ` +
-            `routine ${pretty(survey.q6)}, ` +
-            `sensitivity ${pretty(survey.q7)}, ` +
-            `goal ${pretty(survey.q8)}. ` +
-            `Return product names, short reasons, and links.`;
+            `skin type: ${pretty(survey.q1)}; concern: ${pretty(survey.q2)}; allergies: ${list(survey.q4)}; ` +
+            `preference: ${pretty(survey.q5)}; routine: ${pretty(survey.q6)}; sensitivity: ${pretty(survey.q7)}; ` +
+            `goal: ${pretty(survey.q8)}.`;
           const el = kitRef.current as any;
           console.log("skin.survey.submit", { payload, survey, query });
           await el.sendUserMessage({
@@ -259,7 +254,7 @@ export function ChatKitPanel({
       if (invocation.name === "recommend_products") {
         const q = String(invocation.params?.query ?? "");
         console.log("onClientTool.recommend_products params", { q });
-        if (!q) return { error: "missing_query" };
+        if (!q) return { products: [] };
         try {
           const res = await fetch(`/api/recommend?query=${encodeURIComponent(q)}`, { cache: "no-store" });
           const text = await res.text();
@@ -267,29 +262,93 @@ export function ChatKitPanel({
           try {
             data = JSON.parse(text);
           } catch {
-            data = { raw: text };
+            data = [];
           }
-          const items = Array.isArray(data?.items)
+
+          const arr = Array.isArray(data?.items)
             ? data.items
             : Array.isArray(data?.products)
-            ? data.products
-            : Array.isArray(data?.results)
-            ? data.results
-            : Array.isArray(data?.data)
-            ? data.data
-            : Array.isArray(data)
-            ? data
-            : [];
-          const products = items.slice(0, 12).map((it: any, i: number) => ({
-            name: it.name || it.title || it.product || `Result ${i + 1}`,
-            reason: it.reason || it.match || it.summary || "",
-            url: it.url || it.link || it.href || "",
-          }));
-          console.log("onClientTool.recommend_products result", { count: products.length });
-          return { ok: true, products };
+              ? data.products
+              : Array.isArray(data?.results)
+                ? data.results
+                : Array.isArray(data?.data)
+                  ? data.data
+                  : Array.isArray(data)
+                    ? data
+                    : [];
+
+          const toTitle = (s: string) =>
+            s
+              .replace(/\?.*$/, "")
+              .replace(/[-_]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+
+          const parseLabel = (mf: any) => {
+            if (!mf) return "";
+            if (typeof mf.labelnaam === "string") {
+              try {
+                const j = JSON.parse(mf.labelnaam);
+                return j?.nl || j?.en || "";
+              } catch { }
+            } else if (mf?.labelnaam?.nl || mf?.labelnaam?.en) {
+              return mf.labelnaam.nl || mf.labelnaam.en || "";
+            }
+            return mf?.productnaam_nl || mf?.productnaam_en || "";
+          };
+
+          const stripHtml = (h: string) =>
+            h ? h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+
+          const products = arr.slice(0, 12).map((it: any, i: number) => {
+            const url = it.product_url || it.url || it.link || it.href || "";
+            const handle = (() => {
+              try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || ""); }
+              catch { return (url || "").split("/").pop() || ""; }
+            })();
+            const mf = it.metafields || {};
+
+            const toTitle = (s: string) =>
+              s.replace(/\?.*$/, "")
+                .replace(/[-_]/g, " ")
+                .replace(/\s+/g, " ")
+                .trim()
+                .replace(/\b\w/g, (c) => c.toUpperCase());
+
+            const parseLabel = (m: any) => {
+              if (!m) return "";
+              if (typeof m.labelnaam === "string") {
+                try { const j = JSON.parse(m.labelnaam); return j?.nl || j?.en || ""; } catch { }
+              } else if (m.labelnaam?.nl || m.labelnaam?.en) {
+                return m.labelnaam.nl || m.labelnaam.en || "";
+              }
+              return m.productnaam_nl || m.productnaam_en || "";
+            };
+
+            const stripHtml = (h: string) => (h ? h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
+
+            const name =
+              it.name || it.title || parseLabel(mf) || toTitle(handle) || `Product ${i + 1}`;
+
+            const reasonRaw =
+              it.reason || it.match || it.summary ||
+              it.description_excerpt || mf.description_excerpt || it.body_html || "";
+
+            const reason = stripHtml(String(reasonRaw)).slice(0, 180);
+
+            // IMPORTANT: don’t include distance (or any other extra fields) if schema is strict
+            return { name, url, reason };
+          });
+
+          return { products };
+
+
+          console.log("onClientTool.recommend_products result", products);
+          return { products };
         } catch (e) {
           console.error("onClientTool.recommend_products error", e);
-          return { error: "upstream_failure" };
+          return { products: [] };
         }
       }
 
@@ -387,17 +446,13 @@ function extractErrorDetail(
   fallback: string
 ): string {
   if (!payload) return fallback;
-
   const error = (payload as any).error;
   if (typeof error === "string") return error;
-
   if (error && typeof error === "object" && "message" in error && typeof (error as any).message === "string") {
     return (error as any).message;
   }
-
   const details = (payload as any).details;
   if (typeof details === "string") return details;
-
   if (details && typeof details === "object" && "error" in details) {
     const nestedError = (details as any).error;
     if (typeof nestedError === "string") return nestedError;
@@ -405,7 +460,6 @@ function extractErrorDetail(
       return (nestedError as any).message;
     }
   }
-
   if (typeof (payload as any).message === "string") return (payload as any).message;
   return fallback;
 }
