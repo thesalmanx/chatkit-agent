@@ -1,5 +1,4 @@
 // @ts-nocheck
-
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -208,28 +207,11 @@ export function ChatKitPanel({
 
         if (type === "question.submit") {
           const el = kitRef.current as any;
-          console.log("quiz.submit", { quizId, answer, payload });
-          try {
-            const res = await fetch("/api/quiz/submit", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ quizId, answer }),
-            });
-            if (!res.ok) throw new Error(`API ${res.status}`);
-            if (el?.sendUserMessage) {
-              await el.sendUserMessage({
-                text: `Recorded your answer "${answer}" for quiz "${quizId}".`,
-                reply: (widgetItem as any)?.id,
-              });
-            }
-          } catch {
-            if (el?.sendUserMessage) {
-              await el.sendUserMessage({
-                text: "Sorry — couldn’t save your answer right now.",
-                reply: (widgetItem as any)?.id,
-              });
-            }
-          }
+          console.log("question.submit", { quizId, answer, payload });
+          await el.sendUserMessage({
+            text: `Recorded your answer "${answer}" for quiz "${quizId}".`,
+            reply: (widgetItem as any)?.id,
+          });
           return { ok: true, quizId, answer };
         }
 
@@ -249,42 +231,24 @@ export function ChatKitPanel({
             q7: pick("q7"),
             q8: pick("q8"),
           };
-          const el = kitRef.current as any;
-          console.log("skin.survey.submit.payload", payload);
-          console.log("skin.survey.submit.normalized", survey);
           const pretty = (v: any) =>
             typeof v === "string" ? v.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : String(v);
           const list = (arr: any[]) => (!arr || arr.length === 0 ? "None" : arr.map(pretty).join(", "));
-          const summary =
-            "Survey saved:\n" +
-            `- Skin type: ${pretty(survey.q1)}\n` +
-            `- Primary concern: ${pretty(survey.q2)}\n` +
-            `- Allergies: ${list(survey.q4)}\n` +
-            `- Product preference: ${pretty(survey.q5)}\n` +
-            `- Routine: ${pretty(survey.q6)}\n` +
-            `- Sensitivity: ${pretty(survey.q7)}\n` +
-            `- Desired results: ${pretty(survey.q8)}`;
-          try {
-            const res = await fetch("/api/survey/submit", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(survey),
-            });
-            if (!res.ok) throw new Error(`API ${res.status}`);
-            if (el?.sendUserMessage) {
-              await el.sendUserMessage({
-                text: summary,
-                reply: (widgetItem as any)?.id,
-              });
-            }
-          } catch {
-            if (el?.sendUserMessage) {
-              await el.sendUserMessage({
-                text: "Sorry — couldn’t save your survey right now.",
-                reply: (widgetItem as any)?.id,
-              });
-            }
-          }
+          const query =
+            `Recommend products for a user with skin type ${pretty(survey.q1)}, ` +
+            `concern ${pretty(survey.q2)}, ` +
+            `allergies ${list(survey.q4)}, ` +
+            `preference ${pretty(survey.q5)}, ` +
+            `routine ${pretty(survey.q6)}, ` +
+            `sensitivity ${pretty(survey.q7)}, ` +
+            `goal ${pretty(survey.q8)}. ` +
+            `Return product names, short reasons, and links.`;
+          const el = kitRef.current as any;
+          console.log("skin.survey.submit", { payload, survey, query });
+          await el.sendUserMessage({
+            text: `recommend_products.query: ${query}`,
+            reply: (widgetItem as any)?.id,
+          });
           return { ok: true };
         }
 
@@ -292,6 +256,43 @@ export function ChatKitPanel({
       },
     },
     onClientTool: async (invocation: { name: string; params: Record<string, unknown> }) => {
+      if (invocation.name === "recommend_products") {
+        const q = String(invocation.params?.query ?? "");
+        console.log("onClientTool.recommend_products params", { q });
+        if (!q) return { error: "missing_query" };
+        try {
+          const res = await fetch(`/api/recommend?query=${encodeURIComponent(q)}`, { cache: "no-store" });
+          const text = await res.text();
+          let data: any;
+          try {
+            data = JSON.parse(text);
+          } catch {
+            data = { raw: text };
+          }
+          const items = Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.products)
+            ? data.products
+            : Array.isArray(data?.results)
+            ? data.results
+            : Array.isArray(data?.data)
+            ? data.data
+            : Array.isArray(data)
+            ? data
+            : [];
+          const products = items.slice(0, 12).map((it: any, i: number) => ({
+            name: it.name || it.title || it.product || `Result ${i + 1}`,
+            reason: it.reason || it.match || it.summary || "",
+            url: it.url || it.link || it.href || "",
+          }));
+          console.log("onClientTool.recommend_products result", { count: products.length });
+          return { ok: true, products };
+        } catch (e) {
+          console.error("onClientTool.recommend_products error", e);
+          return { error: "upstream_failure" };
+        }
+      }
+
       if (invocation.name === "switch_theme") {
         const requested = (invocation.params as any).theme;
         if (requested === "light" || requested === "dark") {
@@ -300,6 +301,7 @@ export function ChatKitPanel({
         }
         return { success: false };
       }
+
       if (invocation.name === "record_fact") {
         const id = String((invocation.params as any).fact_id ?? "");
         const text = String((invocation.params as any).fact_text ?? "");
@@ -312,6 +314,7 @@ export function ChatKitPanel({
         });
         return { success: true };
       }
+
       return { success: false };
     },
     onResponseEnd: () => {
@@ -384,13 +387,17 @@ function extractErrorDetail(
   fallback: string
 ): string {
   if (!payload) return fallback;
+
   const error = (payload as any).error;
   if (typeof error === "string") return error;
+
   if (error && typeof error === "object" && "message" in error && typeof (error as any).message === "string") {
     return (error as any).message;
   }
+
   const details = (payload as any).details;
   if (typeof details === "string") return details;
+
   if (details && typeof details === "object" && "error" in details) {
     const nestedError = (details as any).error;
     if (typeof nestedError === "string") return nestedError;
@@ -398,6 +405,7 @@ function extractErrorDetail(
       return (nestedError as any).message;
     }
   }
+
   if (typeof (payload as any).message === "string") return (payload as any).message;
   return fallback;
 }

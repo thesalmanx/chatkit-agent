@@ -1,0 +1,125 @@
+{
+  "handle": "duizendblad-etherische-olie",
+  "core": {
+    "title": "",
+    "body_html": "",
+    "vendor": "",
+    "product_category": "",
+    "type": "",
+    "tags": "",
+    "published": "",
+    "status": ""
+  },
+  "options": [
+    {
+      "name": "",
+      "value": "10ML",
+      "linked_to": ""
+    },
+    {
+      "name": "",
+      "value": "",
+      "linked_to": ""
+    },
+    {
+      "name": "",
+      "value": "",
+      "linked_to": ""
+    }
+  ],
+  "variant": {
+    "sku": "DUIZ-NH-2",
+    "grams": 0,
+    "inventory_tracker": "shopify",
+    "inventory_policy": "deny",
+    "fulfillment_service": "manual",
+    "price": 0,
+    "compare_at_price": "",
+    "requires_shipping": true,
+    "taxable": true,
+    "barcode": "",
+    "weight_unit": "g",
+    "tax_code": "",
+    "cost_per_item": 0,
+    "unit_price": {
+      "total_measure": "",
+      "total_measure_unit": "",
+      "base_measure": "",
+      "base_measure_unit": ""
+    },
+    "images": {
+      "variant_image": "",
+      "image_src": "",
+      "image_position": "",
+      "image_alt_text": ""
+    }
+  },
+  "seo": {
+    "title": "",
+    "description": ""
+  },
+  "marketing": {
+    "checkout_blocks_trigger": "",
+    "auto_discount_value": "",
+    "bundle_discount": "",
+    "maximum_discount": "",
+    "discount_id": "",
+    "pre_order_discount": "",
+    "pre_order_products": "",
+    "linked_product_bundle": ""
+  },
+  "crowdfunding": {
+    "campaign_deadline": "",
+    "campaign_finished": "",
+    "campaign_enabled": "",
+    "manual_increase": "",
+    "target_revenue": ""
+  },
+  "custom_flags": {
+    "disableBonusQty": "",
+    "isBonusFree": ""
+  },
+  "filters": {
+    "eigenschappen_filter": "",
+    "huidaandoening_filter": "",
+    "huidtype_filter": "",
+    "lichaamsdeel_filter": ""
+  },
+  "media": {
+    "thumbnail_image": "",
+    "videos": ""
+  },
+  "eigenschappen": {
+    "hide": "",
+    "product_rating": "",
+    "product_rating_quantity": "",
+    "recipe_slug": "",
+    "routines": "",
+    "high_level_product_type": ""
+  },
+  "product_meta": {
+    "product_type": "",
+    "reviews_rating_count": ""
+  },
+  "shopify_theme_meta": {
+    "color": "",
+    "constitutive_ingredients": "",
+    "fragrance_level": "",
+    "scent": "",
+    "skin_care_effect": "",
+    "skin_care_features": "",
+    "skin_care_mask_type": "",
+    "suitable_for_skin_type": "",
+    "target_gender": ""
+  },
+  "discovery": {
+    "complementary_products": "",
+    "related_products": "",
+    "related_products_display": "",
+    "search_product_boosts": ""
+  },
+  "misc": {
+    "nested_options": "",
+    "gift_card": ""
+  }
+}
